@@ -5,6 +5,8 @@
 #include <unistd.h>         // for fork(), close(), read(), write()
 #include <netinet/in.h>
 #include <string.h>         // for memset()
+#include <arpa/inet.h>      // for inet_pton()
+#include <signal.h>         // for signal()
 
 #define MAXLINESIZE 100
 #define SERV_PORT 5555
@@ -18,6 +20,9 @@ ssize_t noBytesRead;
 void processClient(int clientsd);
 
 int main() {
+    /* Ignore SIGCHLD to prevent zombie processes */
+    signal(SIGCHLD, SIG_IGN);
+
     /* Create socket */
     if ((listensd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
         perror("Cannot create socket");
@@ -28,7 +33,13 @@ int main() {
     memset(&servaddr, 0, sizeof(servaddr));
     servaddr.sin_family = AF_INET;
     servaddr.sin_port = htons(SERV_PORT);
-    servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+
+    /* Bind to a specific IP address */
+    const char *bind_ip = "192.168.1.10";  // <-- change this to your desired IP address
+    if (inet_pton(AF_INET, bind_ip, &servaddr.sin_addr) <= 0) {
+        perror("Invalid IP address");
+        exit(EXIT_FAILURE);
+    }
 
     /* Bind socket address to the socket */
     if (bind(listensd, (struct sockaddr *)&servaddr, sizeof(servaddr)) < 0) {
@@ -41,6 +52,8 @@ int main() {
         perror("Error in listen");
         exit(EXIT_FAILURE);
     }
+
+    printf("Server listening on %s:%d\n", bind_ip, SERV_PORT);
 
     for (;;) {
         /* Wait for client connection */
@@ -71,7 +84,7 @@ int main() {
         close(clientsd);  // Parent does not need connected socket
     }
 
-    /* Not reachable, but good practice */
+    /* Not reachable */
     close(listensd);
     return 0;
 }
