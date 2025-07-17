@@ -1,57 +1,91 @@
-#include <sys/types.h> 
-#include <sys/socket.h> 
-#include <stdio.h> 
-#include <netinet/in.h> 
-#define MAXLINESIZE 100 
-#define SERV_PORT 5555 int listensd,clientsd; 
-char buffer[MAXLINESIZE+1]; 
-struct sockaddr_in servaddr; 
-int noBytesRead=0; 
-/*this function will server client that connects*/ void processClient(int); 
-int main(){
-/*Create socket*/ 
-if((listensd=socket(AF_INET,SOCK_STREAM,0))<0) { 
-fprintf(stderr, "Cannot create socket\n"); 
-exit(-1); 
-} 
-/*Initialize socket address structure*/ 
-bzero(&servaddr,sizeof(servaddr)); 
-servaddr.sin_family=AF_INET; 
-servaddr.sin_port=htons (SERV_PORT); 
-servaddr.sin_addr.s_addr=htonl (INADDR_ANY); 
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <stdio.h>
+#include <stdlib.h>         // for exit()
+#include <unistd.h>         // for fork(), close(), read(), write()
+#include <netinet/in.h>
+#include <string.h>         // for memset()
 
-/*bind socket address to the socket*/ 
-if(bind(listensd, (struct sockaddr*)&servaddr,sizeof(servaddr))<0){ 
-fprintf(stderr, "Error in bind\n"); 
-exit(-1); 
-} 
-/*Make the socket listening socket*/ 
-if(listen(listensd,5)<0) { 
-fprintf(stderr, "Error in listen\n"); 
-exit(-1); 
-} 
-for(;;) { 
-/*wait for client connection*/ 
-clientsd=accept(listensd,(struct sockaddr*)NULL, NULL); 
-if(fork()==0){ 
-/*close listening socket in child. So that reference count 
-remains one. The child serves the client. It does not need listening socket 
-to do this. */ 
-close(listensd); 
-/*server client*/ 
-processClient(clientsd); 
-/*close connected socket*/ 
-close(clientsd); 
-exit(0); 
-} 
+#define MAXLINESIZE 100
+#define SERV_PORT 5555
 
-/*close connected socket in parent so that reference count remains one. */ 
-close(clientsd); 
-} 
-} 
-return 0; 
-void processClient(int clientsd){ 
-/*read message from client and send back*/ 
-while((noBytesRead=read(clientsd, buffer,sizeof(buffer)))>0) 
-write(clientsd, buffer, noBytes Read); 
-} 
+int listensd, clientsd;
+char buffer[MAXLINESIZE + 1];
+struct sockaddr_in servaddr;
+ssize_t noBytesRead;
+
+/* Function prototype */
+void processClient(int clientsd);
+
+int main() {
+    /* Create socket */
+    if ((listensd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+        perror("Cannot create socket");
+        exit(EXIT_FAILURE);
+    }
+
+    /* Initialize socket address structure */
+    memset(&servaddr, 0, sizeof(servaddr));
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_port = htons(SERV_PORT);
+    servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+
+    /* Bind socket address to the socket */
+    if (bind(listensd, (struct sockaddr *)&servaddr, sizeof(servaddr)) < 0) {
+        perror("Error in bind");
+        exit(EXIT_FAILURE);
+    }
+
+    /* Make the socket listening socket */
+    if (listen(listensd, 5) < 0) {
+        perror("Error in listen");
+        exit(EXIT_FAILURE);
+    }
+
+    for (;;) {
+        /* Wait for client connection */
+        clientsd = accept(listensd, NULL, NULL);
+        if (clientsd < 0) {
+            perror("Error in accept");
+            continue;
+        }
+
+        pid_t pid = fork();
+        if (pid < 0) {
+            perror("Error in fork");
+            close(clientsd);
+            continue;
+        }
+
+        if (pid == 0) {
+            /* Child process */
+            close(listensd);  // Child does not need listening socket
+
+            processClient(clientsd);
+
+            close(clientsd);
+            exit(EXIT_SUCCESS);
+        }
+
+        /* Parent process */
+        close(clientsd);  // Parent does not need connected socket
+    }
+
+    /* Not reachable, but good practice */
+    close(listensd);
+    return 0;
+}
+
+void processClient(int clientsd) {
+    /* Read message from client and send back */
+    while ((noBytesRead = read(clientsd, buffer, sizeof(buffer))) > 0) {
+        if (write(clientsd, buffer, noBytesRead) < 0) {
+            perror("Error writing to client");
+            break;
+        }
+    }
+
+    if (noBytesRead < 0) {
+        perror("Error reading from client");
+    }
+}
